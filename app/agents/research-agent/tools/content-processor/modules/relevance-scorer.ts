@@ -28,7 +28,7 @@ interface ChunkRelevanceScore {
   keyMatches: string[];
 }
 
-interface RankedChunk {
+export interface RankedChunk {
   chunk: TextChunk;
   relevanceScore: number;
   qualityScore: number;
@@ -584,7 +584,6 @@ export const scoreAndFilterChunks = async (
 
 // Export types for use in other modules
 export type { 
-  RankedChunk, 
   RelevanceScoringResult, 
   QueryAnalysis,
   ChunkRelevanceScore 

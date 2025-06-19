@@ -5,6 +5,7 @@ import { HumanMessage } from "@langchain/core/messages";
 
 import searchTool from "./tools/search";
 import contentProcessorTool from "./tools/content-processor/index";
+import { summarizerTool } from "./tools/summarizer/index";
 import type { ResearchQuery, AgentConfig } from "./type";
 
 export class ResearchAgent {
@@ -34,11 +35,12 @@ export class ResearchAgent {
     console.log("🔧 Initializing agent with tools:");
     console.log("  - Search tool:", searchTool.name);
     console.log("  - Content processor tool:", contentProcessorTool.name);
+    console.log("  - Summarizer tool:", summarizerTool.name);
     
     // Create the React agent with tools
     this.agent = createReactAgent({
       llm: this.llm,
-      tools: [searchTool, contentProcessorTool],
+      tools: [searchTool, contentProcessorTool, summarizerTool],
     });
   }
 
@@ -57,14 +59,21 @@ export class ResearchAgent {
             Instructions:
             1. Use the web_search tool to find relevant URLs and basic information
             2. Use the content_processor tool to extract full content from promising URLs found in step 1
-            3. Synthesize information from multiple sources when possible  
+            3. Use the summarizer tool to generate a high-quality structured summary from the processed content
             4. Provide specific, factual information with proper citations
             5. Mention key sources and findings
             6. If you can't find complete information, acknowledge this
 
             Available tools:
             - web_search: Find URLs and snippets related to your query
-            - content_processor: Extract full content from URLs for detailed analysis
+            - content_processor: Extract and filter full content from URLs for detailed analysis  
+            - summarizer: Generate structured summaries from filtered content chunks with quality validation
+
+            Workflow:
+            1. Search for relevant information using web_search
+            2. Process the most promising URLs using content_processor to get filtered, relevant chunks
+            3. Generate a comprehensive summary using summarizer with the filtered chunks
+            4. Present the final summary with source attribution
 
             Format your response as a well-structured research summary with proper source attribution.`;
 
