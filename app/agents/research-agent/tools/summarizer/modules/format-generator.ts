@@ -91,11 +91,11 @@ const generateSummaryWithClaude = async (
   console.log(`🤖 Generating ${analysis.summaryType} summary with Claude...`);
   
   try {
-    // Initialize Claude with optimized settings
+    // Initialize Claude with optimized settings for speed
     const claude = new ChatAnthropic({
       model: "claude-3-5-sonnet-20241022",
       temperature: 0.3, // Low temperature for consistent, factual summaries
-      maxTokens: 1500   // OPTIMIZATION: Reduced token limit for faster responses
+      maxTokens: 800    // OPTIMIZATION: Further reduced for faster responses
     });
     
     // Create comprehensive prompt

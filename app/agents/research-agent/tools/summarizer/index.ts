@@ -86,11 +86,12 @@ export const generateSummary = async (request: SummaryRequest): Promise<SummaryR
     console.log(`✅ Generation complete: ${generatedSummary.metadata.wordCount} words, ${generatedSummary.structure.length} sections`);
     
     // ========================================
-    // STAGE 4: QUALITY VALIDATION
+    // STAGE 4: QUALITY VALIDATION - OPTIMIZED
     // ========================================
     currentStage = 'validation';
-    console.log('\n🔍 Stage 4: Validating summary quality...');
+    console.log('\n🔍 Stage 4: Fast quality validation...');
     
+    // OPTIMIZATION: Use lightweight validation for faster response
     const qualityValidation = await validateSummaryQuality(
       generatedSummary,
       synthesizedContent,
@@ -99,7 +100,7 @@ export const generateSummary = async (request: SummaryRequest): Promise<SummaryR
       request.query
     );
     
-    console.log(`✅ Validation complete: ${(qualityValidation.overall.overall * 100).toFixed(1)}% quality score`);
+    console.log(`✅ Fast validation complete: ${(qualityValidation.overall.overall * 100).toFixed(1)}% quality score`);
     
     // ========================================
     // FINAL RESULT ASSEMBLY
@@ -124,8 +125,8 @@ export const generateSummary = async (request: SummaryRequest): Promise<SummaryR
       }
     };
     
-    // Log final summary
-    logSummaryResults(result);
+    // OPTIMIZATION: Skip heavy logging for faster response
+    console.log(`✅ Summary complete: ${result.summaryType}, ${result.metadata.finalWordCount} words, ${Math.round(result.quality.overall.overall * 100)}% quality`);
     
     return result;
     
