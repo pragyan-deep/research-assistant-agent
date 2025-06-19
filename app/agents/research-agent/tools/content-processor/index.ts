@@ -3,6 +3,7 @@ import { z } from "zod";
 import { scrapeMultipleUrls } from "./modules/web-scraper";
 import { cleanMultipleContent, type CleanedContent } from "./modules/content-cleaner";
 import { chunkMultipleTexts, type ChunkedContent, type TextChunk } from "./modules/text-chunker";
+import { scoreAndFilterChunks, type RankedChunk, type RelevanceScoringResult } from "./modules/relevance-scorer";
 
 /**
  * Content Processor Tool - Web Content Processing Pipeline
@@ -23,7 +24,7 @@ interface ContentProcessorInput {
  * 1. Web Scraper - Extract full content from URLs using headless browser ✅
  * 2. Content Cleaner - Clean and structure content ✅
  * 3. Text Chunker - Break content into chunks ✅
- * 4. Relevance Scorer - Score and filter chunks (TODO)
+ * 4. Relevance Scorer - Score and filter chunks ✅
  * 
  * @param input - Object containing URLs array and search query
  * @returns Promise<string> - JSON stringified processed content
@@ -90,32 +91,45 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     console.log(`✅ Text chunking completed: ${allChunks.length} total chunks created`);
     
     // ========================================
-    // STAGE 4: RELEVANCE SCORER (TODO)
+    // STAGE 4: RELEVANCE SCORER ✅ IMPLEMENTED
     // ========================================
-    console.log("🎯 Stage 4: Relevance Scoring - Returning all chunks for now...");
-    // TODO: Implement relevance scoring logic
-    // For now, return all created chunks
+    console.log("🎯 Stage 4: Relevance Scoring - Scoring and filtering chunks for relevance...");
+    
+    // Score and filter chunks using the relevance scorer
+    const relevanceScoringResult = await scoreAndFilterChunks(allChunks, query);
+    
+    // Extract the top-ranked chunks
+    const topRankedChunks = relevanceScoringResult.rankedChunks;
+    
+    console.log(`✅ Relevance scoring completed: ${topRankedChunks.length} top chunks selected from ${allChunks.length} total`);
     
     // ========================================
     // FINAL OUTPUT ASSEMBLY
     // ========================================
     console.log("📊 Assembling final processed content output...");
     
-    // Create processed content from chunks
-    const processedContent = allChunks.map(chunk => ({
-      id: chunk.id,
+    // Create processed content from top-ranked chunks only
+    const processedContent = topRankedChunks.map(rankedChunk => ({
+      id: rankedChunk.chunk.id,
       source: {
-        url: chunk.source.url,
-        title: chunk.source.title
+        url: rankedChunk.chunk.source.url,
+        title: rankedChunk.chunk.source.title
       },
-      content: chunk.content, // Use chunked content
+      content: rankedChunk.chunk.content, // Use top-ranked chunk content
       metadata: {
-        chunkPosition: chunk.metadata.position,
-        chunkWordCount: chunk.metadata.wordCount,
-        chunkCharCount: chunk.metadata.charCount,
-        hasOverlap: chunk.metadata.hasOverlap,
-        chunkingMethod: chunk.metadata.chunkingMethod,
-        originalIndex: chunk.source.originalIndex
+        chunkPosition: rankedChunk.chunk.metadata.position,
+        chunkWordCount: rankedChunk.chunk.metadata.wordCount,
+        chunkCharCount: rankedChunk.chunk.metadata.charCount,
+        hasOverlap: rankedChunk.chunk.metadata.hasOverlap,
+        chunkingMethod: rankedChunk.chunk.metadata.chunkingMethod,
+        originalIndex: rankedChunk.chunk.source.originalIndex,
+        // Add relevance scoring metadata
+        relevanceScore: rankedChunk.relevanceScore,
+        qualityScore: rankedChunk.qualityScore,
+        finalScore: rankedChunk.finalScore,
+        rank: rankedChunk.rank,
+        reasons: rankedChunk.reasons,
+        keyMatches: rankedChunk.keyMatches
       },
       success: true
     }));
@@ -145,9 +159,13 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
       successfulUrls: successfulScrapes.length,
       failedUrls: failedScrapes.length,
       totalChunks: allChunks.length,
+      selectedChunks: topRankedChunks.length,
+      chunkFilteringEfficiency: allChunks.length > 0 
+        ? Math.round(((allChunks.length - topRankedChunks.length) / allChunks.length) * 100)
+        : 0,
       originalTotalWords: successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0),
       cleanedTotalWords: sourceMetadata.reduce((sum, s) => sum + s.cleanedWordCount, 0),
-      chunkedTotalWords: processedContent.reduce((sum, p) => sum + p.metadata.chunkWordCount, 0),
+      finalSelectedWords: processedContent.reduce((sum, p) => sum + p.metadata.chunkWordCount, 0),
       averageOriginalWordsPerUrl: successfulScrapes.length > 0 
         ? Math.round(successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0) / successfulScrapes.length)
         : 0,
@@ -157,12 +175,15 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
       averageChunksPerUrl: sourceMetadata.length > 0
         ? Math.round(sourceMetadata.reduce((sum, s) => sum + s.totalChunks, 0) / sourceMetadata.length)
         : 0,
-      averageChunkSize: allChunks.length > 0
-        ? Math.round(allChunks.reduce((sum, chunk) => sum + chunk.metadata.wordCount, 0) / allChunks.length)
+      averageSelectedChunkSize: topRankedChunks.length > 0
+        ? Math.round(topRankedChunks.reduce((sum, chunk) => sum + chunk.chunk.metadata.wordCount, 0) / topRankedChunks.length)
         : 0,
+      averageRelevanceScore: relevanceScoringResult.filtering.averageRelevance,
       averageContentReduction: sourceMetadata.length > 0
         ? Math.round(sourceMetadata.reduce((sum, s) => sum + s.contentReduction, 0) / sourceMetadata.length)
         : 0,
+      queryComplexity: relevanceScoringResult.queryAnalysis.complexity,
+      queryType: relevanceScoringResult.queryAnalysis.type,
       processingTime: Date.now(),
       timestamp: new Date().toISOString()
     };
@@ -170,13 +191,15 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     const result = {
       processedContent,
       sourceMetadata,
+      relevanceScoring: relevanceScoringResult.filtering,
+      queryAnalysis: relevanceScoringResult.queryAnalysis,
       summary,
       query,
-      stage: "web_scraping_cleaning_and_chunking" // Indicates current implementation level
+      stage: "complete_pipeline" // Indicates current implementation level
     };
     
     console.log("✅ Content processing pipeline completed successfully");
-    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.totalChunks} chunks, ${summary.chunkedTotalWords} words (avg ${summary.averageChunkSize} words/chunk)`);
+    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.selectedChunks}/${summary.totalChunks} chunks selected, ${summary.finalSelectedWords} words (avg ${summary.averageSelectedChunkSize} words/chunk, ${summary.averageRelevanceScore.toFixed(2)} avg relevance)`);
     
     return JSON.stringify(result, null, 2);
     
