@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { scrapeMultipleUrls } from "./modules/web-scraper";
+import { cleanMultipleContent, type CleanedContent } from "./modules/content-cleaner";
 
 /**
  * Content Processor Tool - Web Content Processing Pipeline
@@ -50,11 +51,21 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     }
     
     // ========================================
-    // STAGE 2: CONTENT CLEANER (TODO)
+    // STAGE 2: CONTENT CLEANER ✅ IMPLEMENTED
     // ========================================
-    console.log("🧹 Stage 2: Content Cleaning - Using scraped content as-is for now...");
-    // TODO: Implement content cleaning logic
-    // For now, use the cleaned content from the scraper
+    console.log("🧹 Stage 2: Content Cleaning - Cleaning scraped content...");
+    
+    // Prepare content for cleaning
+    const contentToClean = successfulScrapes.map(scraped => ({
+      content: scraped.content,
+      title: scraped.title,
+      url: scraped.url
+    }));
+    
+    // Clean the content using the content cleaner
+    const cleanedResults = await cleanMultipleContent(contentToClean);
+    
+    console.log(`✅ Content cleaning completed for ${cleanedResults.length} items`);
     
     // ========================================
     // STAGE 3: TEXT CHUNKER (TODO)
@@ -75,26 +86,40 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     // ========================================
     console.log("📊 Assembling final processed content output...");
     
-    const processedContent = successfulScrapes.map(scraped => ({
-      source: {
-        url: scraped.url,
-        title: scraped.title
-      },
-      content: scraped.content,
-      metadata: {
-        wordCount: scraped.metadata.wordCount,
-        scrapingTime: scraped.scrapingTime
-      },
-      success: scraped.success
-    }));
+    const processedContent = successfulScrapes.map((scraped, index) => {
+      const cleanedData = cleanedResults[index];
+      
+      return {
+        source: {
+          url: scraped.url,
+          title: scraped.title
+        },
+        content: cleanedData.content, // Use cleaned content instead of raw scraped content
+        metadata: {
+          originalWordCount: scraped.metadata.wordCount,
+          cleanedWordCount: Math.round(cleanedData.content.split(/\s+/).length),
+          scrapingTime: scraped.scrapingTime,
+          cleaningTime: cleanedData.metadata.processingTime,
+          contentReduction: cleanedData.metadata.reductionPercentage
+        },
+        success: scraped.success
+      };
+    });
     
     const summary = {
       totalUrls: urls.length,
       successfulUrls: successfulScrapes.length,
       failedUrls: failedScrapes.length,
-      totalWords: successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0),
-      averageWordsPerUrl: successfulScrapes.length > 0 
+      originalTotalWords: successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0),
+      cleanedTotalWords: processedContent.reduce((sum, p) => sum + p.metadata.cleanedWordCount, 0),
+      averageOriginalWordsPerUrl: successfulScrapes.length > 0 
         ? Math.round(successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0) / successfulScrapes.length)
+        : 0,
+      averageCleanedWordsPerUrl: processedContent.length > 0
+        ? Math.round(processedContent.reduce((sum, p) => sum + p.metadata.cleanedWordCount, 0) / processedContent.length)
+        : 0,
+      averageContentReduction: processedContent.length > 0
+        ? Math.round(processedContent.reduce((sum, p) => sum + p.metadata.contentReduction, 0) / processedContent.length)
         : 0,
       processingTime: Date.now(),
       timestamp: new Date().toISOString()
@@ -104,11 +129,11 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
       processedContent,
       summary,
       query,
-      stage: "web_scraping_only" // Indicates current implementation level
+      stage: "web_scraping_and_cleaning" // Indicates current implementation level
     };
     
     console.log("✅ Content processing pipeline completed successfully");
-    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.totalWords} total words`);
+    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.cleanedTotalWords} cleaned words (${summary.averageContentReduction}% reduction)`);
     
     return JSON.stringify(result, null, 2);
     
