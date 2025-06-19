@@ -18,8 +18,8 @@ const BROWSER_CONFIG = {
 };
 
 const TIMEOUTS = {
-  page: 15000,
-  navigation: 15000
+  page: 20000,
+  navigation: 20000
 };
 
 const CONTENT_SELECTORS = [
@@ -52,14 +52,23 @@ const createBrowser = async (): Promise<Browser> => {
 const createPage = async (browser: Browser): Promise<Page> => {
   const page = await browser.newPage();
   page.setDefaultTimeout(TIMEOUTS.page);
+  
+  // Set user agent to avoid bot detection
+  await page.setExtraHTTPHeaders({
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  });
+  
   return page;
 };
 
 const navigateToUrl = async (page: Page, url: string): Promise<void> => {
   await page.goto(url, { 
-    waitUntil: 'networkidle',
+    waitUntil: 'domcontentloaded',
     timeout: TIMEOUTS.navigation 
   });
+  
+  // Wait a bit more for dynamic content to load
+  await page.waitForTimeout(2000);
 };
 
 const closeBrowserSafely = async (browser: Browser): Promise<void> => {
