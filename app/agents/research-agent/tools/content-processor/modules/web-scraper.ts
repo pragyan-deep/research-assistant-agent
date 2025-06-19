@@ -33,9 +33,7 @@ const CONTENT_SELECTORS = [
   'body'  // fallback
 ];
 
-const DELAYS = {
-  betweenRequests: 1000
-};
+// Note: DELAYS configuration removed - parallel processing doesn't need artificial delays
 
 const CONTENT_QUALITY = {
   minimumLength: 100
@@ -176,10 +174,7 @@ const measureTime = () => {
   return () => Date.now() - startTime;
 };
 
-const waitBetweenRequests = async (): Promise<void> => {
-  console.log('⏳ Waiting 1 second before next request...');
-  await new Promise(resolve => setTimeout(resolve, DELAYS.betweenRequests));
-};
+// Note: waitBetweenRequests removed - no longer needed with parallel processing
 
 // ========================================
 // MAIN FUNCTIONS
@@ -223,36 +218,52 @@ export const scrapeUrl = async (url: string): Promise<ScrapedContent> => {
 };
 
 /**
- * Scrape multiple URLs sequentially
+ * Scrape multiple URLs in parallel with timeout handling
  * 
  * @param urls - Array of URLs to scrape
  * @returns Promise<ScrapedContent[]> - Array of scraped content
  */
 export const scrapeMultipleUrls = async (urls: string[]): Promise<ScrapedContent[]> => {
+  console.log(`🚀 Processing ${urls.length} URLs in parallel...`);
   
-  const results: ScrapedContent[] = [];
-  
-  for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
-    const isLastUrl = i === urls.length - 1;
-    
+  // Create individual scraping promises with timeout
+  const scrapePromises = urls.map(async (url, index) => {
+    const urlIndex = index + 1;
+    console.log(`📄 [${urlIndex}/${urls.length}] Starting to scrape: ${url}`);
     
     try {
-      const result = await scrapeUrl(url);
-      results.push(result);
+      // Add timeout to prevent hanging on slow/broken websites
+      const result = await Promise.race([
+        scrapeUrl(url),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error(`Timeout after 15 seconds`)), 15000)
+        )
+      ]);
       
-      if (!isLastUrl) {
-        await waitBetweenRequests();
-      }
+      console.log(`✅ [${urlIndex}/${urls.length}] Successfully scraped: ${url} (${result.metadata.wordCount} words)`);
+      return result;
+      
     } catch (error) {
-      console.error(`Failed to scrape ${url}:`, error);
-      
-      const errorResult = createErrorResult(url, error, 0);
-      results.push(errorResult);
+      console.error(`❌ [${urlIndex}/${urls.length}] Failed to scrape ${url}:`, error instanceof Error ? error.message : error);
+      return createErrorResult(url, error, 0);
     }
-  }
+  });
   
+  // Wait for all scraping operations to complete
+  console.log(`⏳ Waiting for all ${urls.length} URLs to complete...`);
+  const results = await Promise.all(scrapePromises);
+  
+  // Log final results
   const successCount = results.filter(result => result.success).length;
+  const failedCount = results.length - successCount;
+  const totalWords = results
+    .filter(result => result.success)
+    .reduce((sum, result) => sum + result.metadata.wordCount, 0);
+  
+  console.log(`🎉 Parallel scraping completed:`);
+  console.log(`   ✅ Successful: ${successCount}/${results.length}`);
+  console.log(`   ❌ Failed: ${failedCount}/${results.length}`);
+  console.log(`   📊 Total words extracted: ${totalWords.toLocaleString()}`);
   
   return results;
 }; 
