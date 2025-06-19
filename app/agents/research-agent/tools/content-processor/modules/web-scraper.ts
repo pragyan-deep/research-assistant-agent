@@ -268,8 +268,19 @@ const navigateToUrl = async (page: Page, url: string): Promise<void> => {
     timeout: TIMEOUTS.navigation 
   });
   
-  // Wait a bit more for dynamic content to load
-  await page.waitForTimeout(2000);
+  // OPTIMIZATION: Smart wait based on content type
+  try {
+    // Wait for main content to be present (faster than fixed timeout)
+    await page.waitForSelector('article, main, .content, .post-content', { 
+      timeout: 3000 
+    }).catch(() => {
+      // If no main content selector found, wait shorter time
+      return page.waitForTimeout(1000);
+    });
+  } catch {
+    // Fallback to minimal wait if selectors fail
+    await page.waitForTimeout(500);
+  }
 };
 
 // Browser closing function removed - now handled by BrowserPool

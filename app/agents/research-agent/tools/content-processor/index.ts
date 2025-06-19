@@ -59,47 +59,68 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     }
     
     // ========================================
-    // STAGE 2: CONTENT CLEANER ✅ IMPLEMENTED
+    // STAGE 2 & 3: PARALLEL CONTENT PROCESSING ✅ OPTIMIZED
     // ========================================
-    console.log("🧹 Stage 2: Content Cleaning - Cleaning scraped content...");
+    console.log("🚀 Stages 2-3: Parallel Content Cleaning & Chunking...");
     
     // Emit streaming callback for processing start
     if (callbacks?.onProcessingStart) {
       callbacks.onProcessingStart(successfulScrapes.length);
     }
     
-    // Prepare content for cleaning
-    const contentToClean = successfulScrapes.map(scraped => ({
-      content: scraped.content,
-      title: scraped.title,
-      url: scraped.url
-    }));
+    // OPTIMIZATION: Process cleaning and chunking in parallel for each piece of content
+    console.log("⚡ Running parallel content processing pipeline...");
     
-    // Clean the content using the content cleaner
-    const cleanedResults = await cleanMultipleContent(contentToClean);
+    const processContentPiece = async (scraped: any, index: number) => {
+      try {
+        // Clean content
+        const cleanedResult = await cleanMultipleContent([{
+          content: scraped.content,
+          title: scraped.title,
+          url: scraped.url
+        }]);
+        
+        // Chunk cleaned content immediately
+        const chunkedResult = await chunkMultipleTexts([{
+          content: cleanedResult[0].content,
+          title: scraped.title,
+          url: scraped.url,
+          originalIndex: index
+        }]);
+        
+        return {
+          cleaned: cleanedResult[0],
+          chunked: chunkedResult[0],
+          success: true
+        };
+      } catch (error) {
+        console.error(`❌ Failed to process content piece ${index + 1}:`, error);
+        return {
+          cleaned: null,
+          chunked: null,
+          success: false
+        };
+      }
+    };
     
-    console.log(`✅ Content cleaning completed for ${cleanedResults.length} items`);
+    // Process all content pieces in parallel
+    const processingResults = await Promise.all(
+      successfulScrapes.map((scraped, index) => processContentPiece(scraped, index))
+    );
     
-    // ========================================
-    // STAGE 3: TEXT CHUNKER ✅ IMPLEMENTED
-    // ========================================
-    console.log("✂️ Stage 3: Text Chunking - Breaking content into manageable chunks...");
-    
-    // Prepare content for chunking
-    const contentToChunk = cleanedResults.map((cleaned, index) => ({
-      content: cleaned.content,
-      title: successfulScrapes[index].title,
-      url: successfulScrapes[index].url,
-      originalIndex: index
-    }));
-    
-    // Chunk the content using the text chunker
-    const chunkedResults = await chunkMultipleTexts(contentToChunk);
+    // Extract results
+    const cleanedResults = processingResults
+      .filter(result => result.success && result.cleaned)
+      .map(result => result.cleaned!);
+      
+    const chunkedResults = processingResults
+      .filter(result => result.success && result.chunked)
+      .map(result => result.chunked!);
     
     // Flatten all chunks from all sources
     const allChunks = chunkedResults.flatMap(result => result.chunks);
     
-    console.log(`✅ Text chunking completed: ${allChunks.length} total chunks created`);
+    console.log(`✅ Parallel processing completed: ${cleanedResults.length} cleaned, ${allChunks.length} total chunks created`);
     
     // ========================================
     // STAGE 4: RELEVANCE SCORER ✅ IMPLEMENTED

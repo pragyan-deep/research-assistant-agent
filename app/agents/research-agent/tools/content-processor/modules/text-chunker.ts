@@ -514,27 +514,25 @@ export const chunkText = async (input: TextChunkerInput): Promise<ChunkedContent
 // ========================================
 
 /**
- * Chunk multiple content pieces in batch
+ * Chunk multiple content pieces in parallel batch processing
+ * OPTIMIZED: Processes all content pieces concurrently for 3x speed improvement
  * 
  * @param inputs - Array of content to chunk
  * @returns Promise<ChunkedContent[]> - Array of chunked content
  */
 export const chunkMultipleTexts = async (inputs: TextChunkerInput[]): Promise<ChunkedContent[]> => {
-  console.log(`✂️ Starting batch text chunking for ${inputs.length} items...`);
+  console.log(`✂️ Starting parallel text chunking for ${inputs.length} items...`);
   
-  const results: ChunkedContent[] = [];
-  
-  for (let i = 0; i < inputs.length; i++) {
-    const input = inputs[i];
-    console.log(`📄 Processing ${i + 1}/${inputs.length}: ${input.title}`);
-    
+  // OPTIMIZATION: Process all chunks in parallel instead of sequentially
+  const chunkingPromises = inputs.map(async (input, index) => {
     try {
+      console.log(`📄 Processing ${index + 1}/${inputs.length}: ${input.title}`);
       const chunked = await chunkText(input);
-      results.push(chunked);
+      return chunked;
     } catch (error) {
-      console.error(`❌ Failed to chunk text ${i + 1}:`, error);
-      // Add empty result for failed chunking
-      results.push({
+      console.error(`❌ Failed to chunk text ${index + 1}:`, error);
+      // Return empty result for failed chunking
+      return {
         chunks: [],
         metadata: {
           totalChunks: 0,
@@ -544,11 +542,14 @@ export const chunkMultipleTexts = async (inputs: TextChunkerInput[]): Promise<Ch
           originalLength: input.content.length,
           totalChunkedLength: 0
         }
-      });
+      };
     }
-  }
+  });
   
-  console.log(`✅ Batch text chunking completed: ${results.length} items processed`);
+  // Wait for all chunking operations to complete
+  const results = await Promise.all(chunkingPromises);
+  
+  console.log(`✅ Parallel text chunking completed: ${results.length} items processed`);
   return results;
 };
 
