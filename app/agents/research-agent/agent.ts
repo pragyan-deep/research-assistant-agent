@@ -8,6 +8,21 @@ import contentProcessorTool from "./tools/content-processor/index";
 import { summarizerTool } from "./tools/summarizer/index";
 import type { ResearchQuery, AgentConfig } from "./type";
 
+// Streaming callbacks interface
+interface StreamingCallbacks {
+  onSearchComplete?: (searchResults: any) => void;
+  onScrapingStart?: (urls: string[]) => void;
+  onScrapingProgress?: (completed: number, total: number, currentUrl?: string) => void;
+  onProcessingStart?: (contentPieces: number) => void;
+  onAnalysisStart?: () => void;
+  onSummaryStart?: (topChunks: number) => void;
+  onError?: (error: Error, stage: string) => void;
+}
+
+interface StreamingResearchQuery extends ResearchQuery {
+  callbacks?: StreamingCallbacks;
+}
+
 export class ResearchAgent {
     private llm: ChatAnthropic;
     private agent!: ReturnType<typeof createReactAgent>;
@@ -95,8 +110,75 @@ export class ResearchAgent {
         }
     }
 
+    async researchWithStreaming(query: StreamingResearchQuery): Promise<{
+        result: unknown;
+        searchQuery: string;
+        timestamp: string;
+    }> {
+        try {
+            console.log(`🔍 Starting streaming research for: "${query.query}"`);
 
+            // Create enhanced research prompt with streaming context
+            const researchPrompt = `You are a helpful research assistant. Please research the following question and provide a comprehensive, well-structured answer:
+            "${query.query}"
 
+            Instructions:
+            1. Use the web_search tool to find relevant URLs and basic information
+            2. Use the content_processor tool to extract full content from promising URLs found in step 1
+            3. Use the summarizer tool to generate a high-quality structured summary from the processed content
+            4. Provide specific, factual information with proper citations
+            5. Mention key sources and findings
+            6. If you can't find complete information, acknowledge this
+
+            Available tools:
+            - web_search: Find URLs and snippets related to your query
+            - content_processor: Extract and filter full content from URLs for detailed analysis  
+            - summarizer: Generate structured summaries from filtered content chunks with quality validation
+
+            Workflow:
+            1. Search for relevant information using web_search
+            2. Process the most promising URLs using content_processor to get filtered, relevant chunks
+            3. Generate a comprehensive summary using summarizer with the filtered chunks
+            4. Present the final summary with source attribution
+
+            Format your response as a well-structured research summary with proper source attribution.
+
+            IMPORTANT: This is a streaming request - tools will emit progress updates during execution.`;
+
+            // Create enhanced agent for streaming with callback interception
+            console.log("🤖 Invoking streaming agent with callbacks...");
+            
+            // Store callbacks globally for tools to access
+            (global as any).streamingCallbacks = query.callbacks;
+
+            const result = await this.agent.invoke(
+                { messages: [new HumanMessage(researchPrompt)] }
+            );
+
+            // Clear global callbacks
+            (global as any).streamingCallbacks = undefined;
+
+            console.log("🤖 Streaming agent response received, messages count:", result.messages?.length || 0);
+
+            return {
+                result,
+                searchQuery: query.query,
+                timestamp: new Date().toISOString(),
+            };
+        } catch (error) {
+            console.error("Streaming research failed:", error);
+            
+            // Notify error through callback if available
+            if (query.callbacks?.onError) {
+                query.callbacks.onError(
+                    error instanceof Error ? error : new Error('Unknown error'),
+                    'agent_execution'
+                );
+            }
+            
+            throw new Error(`Streaming research failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
 
 }
 

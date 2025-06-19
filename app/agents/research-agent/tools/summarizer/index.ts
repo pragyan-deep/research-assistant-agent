@@ -41,6 +41,12 @@ export const generateSummary = async (request: SummaryRequest): Promise<SummaryR
     console.log('🚀 Starting comprehensive summarization pipeline...');
     console.log(`📊 Processing ${request.chunks.length} content chunks for query: "${request.query}"`);
     
+    // Emit streaming callback for summary start
+    const callbacks = (global as any).streamingCallbacks;
+    if (callbacks?.onSummaryStart) {
+      callbacks.onSummaryStart(request.chunks.length);
+    }
+    
     // ========================================
     // STAGE 1: SUMMARY ANALYSIS
     // ========================================

@@ -1,21 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Image from "next/image";
+
+// Stream event interface
+interface StreamEvent {
+  type: 'search' | 'scraping' | 'processing' | 'analysis' | 'summary' | 'complete' | 'error';
+  data: any;
+  progress: number;
+  timestamp: string;
+  metadata?: any;
+}
 
 export default function Home() {
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
+  const [currentStage, setCurrentStage] = useState<string>('');
+  const [progress, setProgress] = useState<number>(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const handleResearch = async () => {
     if (!query.trim()) return;
     
+    // Reset state
     setLoading(true);
     setResult(null);
+    setStreamEvents([]);
+    setCurrentStage('Initializing...');
+    setProgress(0);
+    
+    // Close existing EventSource if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
     
     try {
-      const response = await fetch('/api/test-research', {
+      // Create POST request to initiate streaming
+      const response = await fetch('/api/research-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -25,18 +48,102 @@ export default function Home() {
         }),
       });
       
-      const data = await response.json();
-      setResult(data);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Create EventSource for streaming updates
+      // Note: We need to use a different approach since EventSource doesn't support POST
+      // Instead, we'll read the stream response directly
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const eventData = JSON.parse(line.slice(6));
+                handleStreamEvent(eventData);
+              } catch (e) {
+                console.error('Error parsing stream data:', e);
+              }
+            }
+          }
+        }
+      }
+      
     } catch (error) {
+      console.error('Streaming research error:', error);
       setResult({ 
         success: false,
-        error: 'Request failed', 
+        error: 'Streaming request failed', 
         details: error instanceof Error ? error.message : 'Unknown error' 
       });
     } finally {
       setLoading(false);
     }
   };
+
+  const handleStreamEvent = (event: StreamEvent) => {
+    console.log('📡 Received stream event:', event);
+    
+    // Add event to history
+    setStreamEvents(prev => [...prev, event]);
+    
+    // Update current stage and progress
+    setProgress(event.progress);
+    
+    switch (event.type) {
+      case 'search':
+        setCurrentStage(event.data.message || 'Searching...');
+        break;
+      case 'scraping':
+        setCurrentStage(event.data.message || 'Processing content...');
+        break;
+      case 'processing':
+        setCurrentStage(event.data.message || 'Analyzing content...');
+        break;
+      case 'analysis':
+        setCurrentStage(event.data.message || 'Performing analysis...');
+        break;
+      case 'summary':
+        setCurrentStage(event.data.message || 'Generating summary...');
+        break;
+      case 'complete':
+        setCurrentStage('Research completed!');
+        console.log('📡 Setting final result:', event.data.result);
+        console.log('📡 Result content:', event.data.result?.content);
+        setResult(event.data.result);
+        setLoading(false);
+        break;
+      case 'error':
+        setCurrentStage('Error occurred');
+        console.error('📡 Stream error event:', event.data);
+        setResult({
+          success: false,
+          error: event.data.error || 'Unknown error',
+          details: event.data.message
+        });
+        setLoading(false);
+        break;
+    }
+  };
+
+   // Cleanup on component unmount
+   useEffect(() => {
+     return () => {
+       if (eventSourceRef.current) {
+         eventSourceRef.current.close();
+       }
+     };
+   }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -89,7 +196,7 @@ export default function Home() {
                 {loading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Researching...
+                    <span className="min-w-0 truncate">{currentStage}</span>
                   </div>
                 ) : (
                   'Research'
@@ -116,6 +223,52 @@ export default function Home() {
             ))}
           </div>
         </div>
+
+        {/* Progress Bar and Streaming Events */}
+        {loading && (
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Research Progress</h3>
+              <span className="text-sm text-gray-500">{progress}%</span>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+              ></div>
+            </div>
+            
+            {/* Current Stage */}
+            <div className="flex items-center gap-2 text-gray-700">
+              <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm">{currentStage}</span>
+            </div>
+
+            {/* Recent Events */}
+            {streamEvents.length > 0 && (
+              <div className="mt-4 max-h-32 overflow-y-auto">
+                <h4 className="text-sm font-medium text-gray-600 mb-2">Activity:</h4>
+                <div className="space-y-1">
+                  {streamEvents.slice(-5).map((event, index) => (
+                    <div key={index} className="text-xs text-gray-500 flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        event.type === 'error' ? 'bg-red-500' :
+                        event.type === 'complete' ? 'bg-green-500' :
+                        'bg-blue-500'
+                      }`}></div>
+                      <span className="truncate">{event.data.message}</span>
+                      <span className="text-gray-400 ml-auto">
+                        {new Date(event.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Results */}
         {result && (
@@ -150,6 +303,32 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
+
+                {/* Streaming Events Summary */}
+                {streamEvents.length > 0 && (
+                  <div className="bg-blue-50 rounded-lg p-4 mt-6">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">📡 Research Timeline</h4>
+                    <div className="space-y-2">
+                      {streamEvents.map((event, index) => (
+                        <div key={index} className="flex items-center gap-3 text-sm">
+                          <div className={`w-3 h-3 rounded-full ${
+                            event.type === 'search' ? 'bg-purple-500' :
+                            event.type === 'scraping' ? 'bg-orange-500' :
+                            event.type === 'processing' ? 'bg-yellow-500' :
+                            event.type === 'analysis' ? 'bg-blue-500' :
+                            event.type === 'summary' ? 'bg-green-500' :
+                            event.type === 'complete' ? 'bg-green-600' :
+                            'bg-red-500'
+                          }`}></div>
+                          <span className="flex-1 text-blue-800">{event.data.message}</span>
+                          <span className="text-blue-600 text-xs">
+                            {new Date(event.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Tools Used */}
                 {result.metadata?.toolsUsed && (

@@ -39,6 +39,12 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     // ========================================
     console.log("🕷️ Stage 1: Web Scraping - Extracting content from URLs...");
     
+    // Emit streaming callback for scraping start
+    const callbacks = (global as any).streamingCallbacks;
+    if (callbacks?.onScrapingStart) {
+      callbacks.onScrapingStart(urls);
+    }
+    
     const scrapedResults = await scrapeMultipleUrls(urls);
     
     // Filter successful scrapes
@@ -56,6 +62,11 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     // STAGE 2: CONTENT CLEANER ✅ IMPLEMENTED
     // ========================================
     console.log("🧹 Stage 2: Content Cleaning - Cleaning scraped content...");
+    
+    // Emit streaming callback for processing start
+    if (callbacks?.onProcessingStart) {
+      callbacks.onProcessingStart(successfulScrapes.length);
+    }
     
     // Prepare content for cleaning
     const contentToClean = successfulScrapes.map(scraped => ({
@@ -94,6 +105,11 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     // STAGE 4: RELEVANCE SCORER ✅ IMPLEMENTED
     // ========================================
     console.log("🎯 Stage 4: Relevance Scoring - Scoring and filtering chunks for relevance...");
+    
+    // Emit streaming callback for analysis start
+    if (callbacks?.onAnalysisStart) {
+      callbacks.onAnalysisStart();
+    }
     
     // Score and filter chunks using the relevance scorer
     const relevanceScoringResult = await scoreAndFilterChunks(allChunks, query);

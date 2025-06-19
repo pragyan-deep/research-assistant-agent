@@ -65,6 +65,12 @@ const executeSearch = async ({ query }: { query: string }): Promise<string> => {
     const results = data.organic?.slice(0, 5) || [];
     console.log("✅ Search completed, found", results.length, "results");
     
+    // Emit streaming callback if available
+    const callbacks = (global as any).streamingCallbacks;
+    if (callbacks?.onSearchComplete) {
+      callbacks.onSearchComplete(results);
+    }
+    
     return JSON.stringify(results, null, 2);
   } catch (error) {
     console.error("❌ Search tool error:", error);
