@@ -182,34 +182,6 @@ const waitBetweenRequests = async (): Promise<void> => {
 };
 
 // ========================================
-// LOGGING
-// ========================================
-
-const logScrapingStart = (url: string): void => {
-  console.log(`🕷️ Scraping: ${url}`);
-};
-
-const logScrapingSuccess = (scrapingTime: number, wordCount: number): void => {
-  console.log(`✅ Scraped in ${scrapingTime}ms - ${wordCount} words`);
-};
-
-const logScrapingError = (url: string, error: unknown): void => {
-  console.error(`❌ Scraping failed for ${url}:`, error);
-};
-
-const logBatchProgress = (current: number, total: number, url: string): void => {
-  console.log(`📄 Processing ${current}/${total}: ${url}`);
-};
-
-const logBatchCompletion = (successCount: number, totalCount: number): void => {
-  console.log(`✅ Completed scraping ${successCount}/${totalCount} URLs successfully`);
-};
-
-const logBatchStart = (urlCount: number): void => {
-  console.log(`🕷️ Scraping ${urlCount} URLs sequentially`);
-};
-
-// ========================================
 // MAIN FUNCTIONS
 // ========================================
 
@@ -221,7 +193,6 @@ const logBatchStart = (urlCount: number): void => {
  */
 export const scrapeUrl = async (url: string): Promise<ScrapedContent> => {
   const getElapsedTime = measureTime();
-  logScrapingStart(url);
   
   let browser: Browser | undefined;
   
@@ -240,12 +211,9 @@ export const scrapeUrl = async (url: string): Promise<ScrapedContent> => {
     const scrapingTime = getElapsedTime();
     const wordCount = calculateWordCount(content);
     
-    logScrapingSuccess(scrapingTime, wordCount);
-    
     return createSuccessResult(url, title, content, scrapingTime);
     
   } catch (error) {
-    logScrapingError(url, error);
     return createErrorResult(url, error, getElapsedTime());
   } finally {
     if (browser) {
@@ -261,7 +229,6 @@ export const scrapeUrl = async (url: string): Promise<ScrapedContent> => {
  * @returns Promise<ScrapedContent[]> - Array of scraped content
  */
 export const scrapeMultipleUrls = async (urls: string[]): Promise<ScrapedContent[]> => {
-  logBatchStart(urls.length);
   
   const results: ScrapedContent[] = [];
   
@@ -269,7 +236,6 @@ export const scrapeMultipleUrls = async (urls: string[]): Promise<ScrapedContent
     const url = urls[i];
     const isLastUrl = i === urls.length - 1;
     
-    logBatchProgress(i + 1, urls.length, url);
     
     try {
       const result = await scrapeUrl(url);
@@ -287,7 +253,6 @@ export const scrapeMultipleUrls = async (urls: string[]): Promise<ScrapedContent
   }
   
   const successCount = results.filter(result => result.success).length;
-  logBatchCompletion(successCount, urls.length);
   
   return results;
 }; 
