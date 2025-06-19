@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { scrapeMultipleUrls } from "./modules/web-scraper";
 import { cleanMultipleContent, type CleanedContent } from "./modules/content-cleaner";
+import { chunkMultipleTexts, type ChunkedContent, type TextChunk } from "./modules/text-chunker";
 
 /**
  * Content Processor Tool - Web Content Processing Pipeline
@@ -20,8 +21,8 @@ interface ContentProcessorInput {
  * 
  * Current Implementation:
  * 1. Web Scraper - Extract full content from URLs using headless browser ✅
- * 2. Content Cleaner - Clean and structure content (TODO)
- * 3. Text Chunker - Break content into chunks (TODO) 
+ * 2. Content Cleaner - Clean and structure content ✅
+ * 3. Text Chunker - Break content into chunks ✅
  * 4. Relevance Scorer - Score and filter chunks (TODO)
  * 
  * @param input - Object containing URLs array and search query
@@ -68,41 +69,74 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     console.log(`✅ Content cleaning completed for ${cleanedResults.length} items`);
     
     // ========================================
-    // STAGE 3: TEXT CHUNKER (TODO)
+    // STAGE 3: TEXT CHUNKER ✅ IMPLEMENTED
     // ========================================
-    console.log("✂️ Stage 3: Text Chunking - Using full content for now...");
-    // TODO: Implement text chunking logic
-    // For now, treat each scraped content as one "chunk"
+    console.log("✂️ Stage 3: Text Chunking - Breaking content into manageable chunks...");
+    
+    // Prepare content for chunking
+    const contentToChunk = cleanedResults.map((cleaned, index) => ({
+      content: cleaned.content,
+      title: successfulScrapes[index].title,
+      url: successfulScrapes[index].url,
+      originalIndex: index
+    }));
+    
+    // Chunk the content using the text chunker
+    const chunkedResults = await chunkMultipleTexts(contentToChunk);
+    
+    // Flatten all chunks from all sources
+    const allChunks = chunkedResults.flatMap(result => result.chunks);
+    
+    console.log(`✅ Text chunking completed: ${allChunks.length} total chunks created`);
     
     // ========================================
     // STAGE 4: RELEVANCE SCORER (TODO)
     // ========================================
-    console.log("🎯 Stage 4: Relevance Scoring - Returning all content for now...");
+    console.log("🎯 Stage 4: Relevance Scoring - Returning all chunks for now...");
     // TODO: Implement relevance scoring logic
-    // For now, return all successfully scraped content
+    // For now, return all created chunks
     
     // ========================================
     // FINAL OUTPUT ASSEMBLY
     // ========================================
     console.log("📊 Assembling final processed content output...");
     
-    const processedContent = successfulScrapes.map((scraped, index) => {
+    // Create processed content from chunks
+    const processedContent = allChunks.map(chunk => ({
+      id: chunk.id,
+      source: {
+        url: chunk.source.url,
+        title: chunk.source.title
+      },
+      content: chunk.content, // Use chunked content
+      metadata: {
+        chunkPosition: chunk.metadata.position,
+        chunkWordCount: chunk.metadata.wordCount,
+        chunkCharCount: chunk.metadata.charCount,
+        hasOverlap: chunk.metadata.hasOverlap,
+        chunkingMethod: chunk.metadata.chunkingMethod,
+        originalIndex: chunk.source.originalIndex
+      },
+      success: true
+    }));
+    
+    // Calculate processing metadata for each original source
+    const sourceMetadata = successfulScrapes.map((scraped, index) => {
       const cleanedData = cleanedResults[index];
+      const chunkedData = chunkedResults[index];
+      const sourceChunks = allChunks.filter(chunk => chunk.source.originalIndex === index);
       
       return {
-        source: {
-          url: scraped.url,
-          title: scraped.title
-        },
-        content: cleanedData.content, // Use cleaned content instead of raw scraped content
-        metadata: {
-          originalWordCount: scraped.metadata.wordCount,
-          cleanedWordCount: Math.round(cleanedData.content.split(/\s+/).length),
-          scrapingTime: scraped.scrapingTime,
-          cleaningTime: cleanedData.metadata.processingTime,
-          contentReduction: cleanedData.metadata.reductionPercentage
-        },
-        success: scraped.success
+        url: scraped.url,
+        title: scraped.title,
+        originalWordCount: scraped.metadata.wordCount,
+        cleanedWordCount: Math.round(cleanedData.content.split(/\s+/).length),
+        totalChunks: chunkedData.metadata.totalChunks,
+        averageChunkSize: chunkedData.metadata.averageChunkSize,
+        scrapingTime: scraped.scrapingTime,
+        cleaningTime: cleanedData.metadata.processingTime,
+        chunkingTime: chunkedData.metadata.processingTime,
+        contentReduction: cleanedData.metadata.reductionPercentage
       };
     });
     
@@ -110,16 +144,24 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
       totalUrls: urls.length,
       successfulUrls: successfulScrapes.length,
       failedUrls: failedScrapes.length,
+      totalChunks: allChunks.length,
       originalTotalWords: successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0),
-      cleanedTotalWords: processedContent.reduce((sum, p) => sum + p.metadata.cleanedWordCount, 0),
+      cleanedTotalWords: sourceMetadata.reduce((sum, s) => sum + s.cleanedWordCount, 0),
+      chunkedTotalWords: processedContent.reduce((sum, p) => sum + p.metadata.chunkWordCount, 0),
       averageOriginalWordsPerUrl: successfulScrapes.length > 0 
         ? Math.round(successfulScrapes.reduce((sum, s) => sum + s.metadata.wordCount, 0) / successfulScrapes.length)
         : 0,
-      averageCleanedWordsPerUrl: processedContent.length > 0
-        ? Math.round(processedContent.reduce((sum, p) => sum + p.metadata.cleanedWordCount, 0) / processedContent.length)
+      averageCleanedWordsPerUrl: sourceMetadata.length > 0
+        ? Math.round(sourceMetadata.reduce((sum, s) => sum + s.cleanedWordCount, 0) / sourceMetadata.length)
         : 0,
-      averageContentReduction: processedContent.length > 0
-        ? Math.round(processedContent.reduce((sum, p) => sum + p.metadata.contentReduction, 0) / processedContent.length)
+      averageChunksPerUrl: sourceMetadata.length > 0
+        ? Math.round(sourceMetadata.reduce((sum, s) => sum + s.totalChunks, 0) / sourceMetadata.length)
+        : 0,
+      averageChunkSize: allChunks.length > 0
+        ? Math.round(allChunks.reduce((sum, chunk) => sum + chunk.metadata.wordCount, 0) / allChunks.length)
+        : 0,
+      averageContentReduction: sourceMetadata.length > 0
+        ? Math.round(sourceMetadata.reduce((sum, s) => sum + s.contentReduction, 0) / sourceMetadata.length)
         : 0,
       processingTime: Date.now(),
       timestamp: new Date().toISOString()
@@ -127,13 +169,14 @@ const processContent = async ({ urls, query }: ContentProcessorInput): Promise<s
     
     const result = {
       processedContent,
+      sourceMetadata,
       summary,
       query,
-      stage: "web_scraping_and_cleaning" // Indicates current implementation level
+      stage: "web_scraping_cleaning_and_chunking" // Indicates current implementation level
     };
     
     console.log("✅ Content processing pipeline completed successfully");
-    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.cleanedTotalWords} cleaned words (${summary.averageContentReduction}% reduction)`);
+    console.log(`📊 Summary: ${summary.successfulUrls}/${summary.totalUrls} URLs, ${summary.totalChunks} chunks, ${summary.chunkedTotalWords} words (avg ${summary.averageChunkSize} words/chunk)`);
     
     return JSON.stringify(result, null, 2);
     
