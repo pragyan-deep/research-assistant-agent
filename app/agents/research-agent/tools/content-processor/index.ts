@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { scrapeMultipleUrls } from "./modules/web-scraper";
+import { scrapeMultipleUrls, closeBrowserPool } from "./modules/web-scraper";
 import { cleanMultipleContent, type CleanedContent } from "./modules/content-cleaner";
 import { chunkMultipleTexts, type ChunkedContent, type TextChunk } from "./modules/text-chunker";
 import { scoreAndFilterChunks, type RankedChunk, type RelevanceScoringResult } from "./modules/relevance-scorer";
@@ -224,4 +224,7 @@ const contentProcessorTool = tool(
   }
 );
 
-export default contentProcessorTool; 
+export default contentProcessorTool;
+
+// Export browser pool cleanup for graceful shutdown
+export { closeBrowserPool }; 
